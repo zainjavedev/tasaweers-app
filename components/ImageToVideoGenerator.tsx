@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { GeneratedVideo, VideoAspectRatio } from '../types';
+import { GeneratedVideo, VideoAspectRatio, VideoModel } from '../types';
 import {
     generateVideo,
     optimizeImagePromptForVideo,
@@ -9,6 +9,7 @@ import Spinner from './Spinner';
 import LoadingPlaceholder from './LoadingPlaceholder';
 import { DownloadIcon, ExtendIcon, OptimizeIcon } from './Icons';
 import { loadingMessages } from '../constants/loadingMessages';
+import { MODEL_IDS, VIDEO_MODEL_INFO, VIDEO_MODEL_OPTIONS_PROMPT } from '../constants/modelInfo';
 
 type ImageToVideoGeneratorProps = {
     initialImageBase64: string | null;
@@ -25,6 +26,7 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
     const [imageBase64, setImageBase64] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>('16:9');
+    const [videoModel, setVideoModel] = useState<VideoModel>(MODEL_IDS.VEO_31_FAST_PREVIEW);
     const [isLoading, setIsLoading] = useState(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
@@ -96,7 +98,7 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
         setIsOptimizing(true);
         setError(null);
         try {
-            const optimized = await optimizePrompt(prompt);
+            const optimized = await optimizePrompt(prompt, 'video');
             setPrompt(optimized);
         } catch (e: any) {
             setError(e.message || 'Failed to optimize prompt.');
@@ -124,7 +126,7 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
                 prompt,
                 aspectRatio,
                 setLoadingMessage,
-                { imageBase64 }
+                { imageBase64, modelId: videoModel }
             );
             setGeneratedVideo({ url: videoUrl, data: videoData });
         } catch (e: any) {
@@ -146,6 +148,9 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
     };
 
     const isGenerationDisabled = isLoading || isOptimizing || !prompt || !imageBase64;
+    const activeModelId = generatedVideo?.data.modelId ?? videoModel;
+    const activeModelInfo =
+        VIDEO_MODEL_INFO[activeModelId] ?? VIDEO_MODEL_INFO[MODEL_IDS.VEO_31_FAST_PREVIEW];
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -269,6 +274,25 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
                         ))}
                     </div>
                 </div>
+                <div>
+                    <label className="block text-lg font-semibold mb-2">4. Select Video Model</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {VIDEO_MODEL_OPTIONS_PROMPT.map(({ id, displayName, usageHint }) => (
+                            <button
+                                key={id}
+                                onClick={() => setVideoModel(id)}
+                                className={`py-3 px-4 rounded-lg text-left text-sm transition-colors ${
+                                    videoModel === id
+                                        ? 'bg-black text-white'
+                                        : 'bg-white hover:bg-gray-100 text-black border border-gray-300'
+                                }`}
+                            >
+                                <span className="font-semibold block">{displayName}</span>
+                                <span className="text-xs opacity-80">{usageHint}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <button
                     onClick={handleGenerateVideo}
                     disabled={isGenerationDisabled}
@@ -287,8 +311,15 @@ const ImageToVideoGenerator: React.FC<ImageToVideoGeneratorProps> = ({
             </div>
             <div
                 ref={outputRef}
-                className="w-full lg:w-1/2 bg-white border border-gray-300 p-4 lg:p-6 rounded-xl shadow-sm flex flex-col items-center justify-center min-h-[400px]"
+                className="w-full lg:w-1/2 bg-white border border-gray-300 p-4 lg:p-6 rounded-xl shadow-sm flex flex-col items-center justify-center min-h-[400px] gap-4"
             >
+                <div className="self-stretch text-left">
+                    <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                        Video model
+                    </p>
+                    <p className="text-sm text-gray-700">{activeModelInfo.displayName}</p>
+                    <p className="text-xs text-gray-500">{activeModelInfo.usageHint}</p>
+                </div>
                 {isLoading ? (
                     <LoadingPlaceholder
                         message={loadingMessage}

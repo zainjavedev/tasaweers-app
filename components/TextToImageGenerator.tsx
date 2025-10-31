@@ -4,6 +4,12 @@ import { generateImage, optimizePrompt } from '../services/veoService';
 import Spinner from './Spinner';
 import LoadingPlaceholder from './LoadingPlaceholder';
 import { DownloadIcon, EditIcon, OptimizeIcon } from './Icons';
+import { IMAGE_MODEL_OPTIONS, MODEL_IDS } from '../constants/modelInfo';
+
+const IMAGEN_MODEL_INFO = IMAGE_MODEL_OPTIONS.find(({ id }) => id === MODEL_IDS.IMAGEN_4)!;
+const GEMINI_IMAGE_MODEL_INFO = IMAGE_MODEL_OPTIONS.find(
+    ({ id }) => id === MODEL_IDS.GEMINI_IMAGE_FLASH
+)!;
 
 type TextToImageGeneratorProps = {
     onUseForVideo: (imageBase64: string, prompt: string) => void;
@@ -15,7 +21,7 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
     onUseForEditing,
 }) => {
     const [prompt, setPrompt] = useState('');
-    const [imageModel, setImageModel] = useState<ImageModel>('imagen-4.0-generate-001');
+    const [imageModel, setImageModel] = useState<ImageModel>(MODEL_IDS.IMAGEN_4);
     const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>('16:9');
     const [isLoading, setIsLoading] = useState(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
@@ -28,7 +34,8 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
     const handleReferenceImageChange = (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setImageModel('gemini-2.5-flash-image');
+            setImageModel(MODEL_IDS.GEMINI_IMAGE_FLASH);
+            setAspectRatio('1:1');
             const reader = new FileReader();
             reader.onloadend = () => {
                 setReferenceImage(reader.result as string);
@@ -43,10 +50,10 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
     };
 
     const handleModelChange = (newModel: ImageModel) => {
-        if (referenceImage && newModel === 'imagen-4.0-generate-001') {
+        if (referenceImage && newModel === MODEL_IDS.IMAGEN_4) {
             if (
                 window.confirm(
-                    'Switching to the Imagen model will remove your reference image. Do you want to continue?'
+                    `Switching to ${IMAGEN_MODEL_INFO.displayName} will remove your reference image. Do you want to continue?`
                 )
             ) {
                 setReferenceImage(null);
@@ -55,6 +62,10 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
         } else {
             setImageModel(newModel);
         }
+
+        if (newModel === MODEL_IDS.GEMINI_IMAGE_FLASH) {
+            setAspectRatio('1:1');
+        }
     };
 
     const handleOptimizePrompt = async () => {
@@ -62,7 +73,7 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
         setIsOptimizing(true);
         setError(null);
         try {
-            const optimized = await optimizePrompt(prompt);
+            const optimized = await optimizePrompt(prompt, 'image');
             setPrompt(optimized);
         } catch (e: any) {
             setError(e.message || 'Failed to optimize prompt.');
@@ -105,6 +116,8 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
     };
 
     const isGenerationDisabled = isLoading || isOptimizing || !prompt;
+
+    const isAspectRatioSupported = imageModel === MODEL_IDS.IMAGEN_4;
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -226,7 +239,7 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
                                 </div>
                                 {!referenceImage && (
                                     <p className="text-xs text-gray-500 pt-1">
-                                        Using a reference will switch to the Nano Banana model.
+                                        Using a reference switches to {GEMINI_IMAGE_MODEL_INFO.displayName}.
                                     </p>
                                 )}
                             </div>
@@ -236,65 +249,71 @@ const TextToImageGenerator: React.FC<TextToImageGeneratorProps> = ({
                 <div>
                     <label className="block text-lg font-semibold mb-2">3. Select Model</label>
                     <div className="flex space-x-2">
-                        {(['imagen-4.0-generate-001', 'gemini-2.5-flash-image'] as ImageModel[]).map(
-                            (model) => (
-                                <button
-                                    key={model}
-                                    onClick={() => handleModelChange(model)}
-                                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                                        imageModel === model
-                                            ? 'bg-black text-white'
-                                            : 'bg-white hover:bg-gray-100 text-black border border-gray-300'
-                                    }`}
-                                >
-                                    {model === 'imagen-4.0-generate-001'
-                                        ? 'Imagen 4'
-                                        : 'Gemini Image Flash'}
-                                </button>
-                            )
-                        )}
-                    </div>
-                </div>
-                <div>
-                    <label className="block text-lg font-semibold mb-2">4. Select Aspect Ratio</label>
-                    <div className="grid grid-cols-2 gap-2">
-                        {[
-                            {
-                                value: '16:9' as ImageAspectRatio,
-                                label: 'Landscape 16:9',
-                                useCase: 'YouTube hero, LinkedIn banners',
-                            },
-                            {
-                                value: '9:16' as ImageAspectRatio,
-                                label: 'Portrait 9:16',
-                                useCase: 'Instagram Reels, Shorts, TikTok',
-                            },
-                            {
-                                value: '1:1' as ImageAspectRatio,
-                                label: 'Square 1:1',
-                                useCase: 'Instagram feed, Pinterest tiles',
-                            },
-                            {
-                                value: '4:5' as ImageAspectRatio,
-                                label: 'Portrait 4:5',
-                                useCase: 'Instagram posts, Facebook feed',
-                            },
-                        ].map(({ value, label, useCase }) => (
+                        {IMAGE_MODEL_OPTIONS.map(({ id, displayName, usageHint }) => (
                             <button
-                                key={value}
-                                onClick={() => setAspectRatio(value)}
-                                className={`py-3 px-4 rounded-lg text-left text-sm transition-colors ${
-                                    aspectRatio === value
+                                key={id}
+                                onClick={() => handleModelChange(id)}
+                                className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                                    imageModel === id
                                         ? 'bg-black text-white'
                                         : 'bg-white hover:bg-gray-100 text-black border border-gray-300'
                                 }`}
                             >
-                                <span className="font-semibold block">{label}</span>
-                                <span className="text-xs opacity-80">{useCase}</span>
+                                <span className="block">{displayName}</span>
+                                <span className="text-xs font-normal opacity-80">{usageHint}</span>
                             </button>
                         ))}
                     </div>
                 </div>
+                {isAspectRatioSupported ? (
+                    <div>
+                        <label className="block text-lg font-semibold mb-2">4. Select Aspect Ratio</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[
+                                {
+                                    value: '16:9' as ImageAspectRatio,
+                                    label: 'Landscape 16:9',
+                                    useCase: 'YouTube hero, LinkedIn banners',
+                                },
+                                {
+                                    value: '9:16' as ImageAspectRatio,
+                                    label: 'Portrait 9:16',
+                                    useCase: 'Instagram Reels, Shorts, TikTok',
+                                },
+                                {
+                                    value: '1:1' as ImageAspectRatio,
+                                    label: 'Square 1:1',
+                                    useCase: 'Instagram feed, Pinterest tiles',
+                                },
+                                {
+                                    value: '4:5' as ImageAspectRatio,
+                                    label: 'Portrait 4:5',
+                                    useCase: 'Instagram posts, Facebook feed',
+                                },
+                            ].map(({ value, label, useCase }) => (
+                                <button
+                                    key={value}
+                                    onClick={() => setAspectRatio(value)}
+                                    className={`py-3 px-4 rounded-lg text-left text-sm transition-colors ${
+                                        aspectRatio === value
+                                            ? 'bg-black text-white'
+                                            : 'bg-white hover:bg-gray-100 text-black border border-gray-300'
+                                    }`}
+                                >
+                                    <span className="font-semibold block">{label}</span>
+                                    <span className="text-xs opacity-80">{useCase}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div>
+                        <label className="block text-lg font-semibold mb-2">4. Aspect Ratio</label>
+                        <div className="bg-gray-100 border border-gray-200 rounded-lg p-3 text-sm text-gray-600">
+                            {GEMINI_IMAGE_MODEL_INFO.displayName} currently outputs square frames, so aspect ratio presets are hidden. Switch back to {IMAGEN_MODEL_INFO.displayName} to unlock them.
+                        </div>
+                    </div>
+                )}
                 <button
                     onClick={handleGenerateImage}
                     disabled={isGenerationDisabled}

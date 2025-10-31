@@ -58,7 +58,7 @@ const ImageToImageGenerator: React.FC<ImageToImageGeneratorProps> = ({
         setIsOptimizing(true);
         setError(null);
         try {
-            const optimized = await optimizePrompt(prompt);
+            const optimized = await optimizePrompt(prompt, 'image');
             setPrompt(optimized);
         } catch (e: any) {
             setError(e.message || 'Failed to optimize prompt.');

@@ -5,6 +5,7 @@ import Spinner from './Spinner';
 import LoadingPlaceholder from './LoadingPlaceholder';
 import { DownloadIcon, ExtendIcon, OptimizeIcon, WorkflowIcon } from './Icons';
 import { loadingMessages } from '../constants/loadingMessages';
+import { MODEL_IDS, VIDEO_MODEL_INFO, VIDEO_MODEL_OPTIONS_EXTEND } from '../constants/modelInfo';
 
 type VideoToVideoGeneratorProps = {
     initialVideo: GeneratedVideo | null;
@@ -67,7 +68,7 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
         setIsOptimizing(true);
         setError(null);
         try {
-            const optimized = await optimizePrompt(prompt);
+            const optimized = await optimizePrompt(prompt, 'video');
             setPrompt(optimized);
         } catch (e: any) {
             setError(e.message || 'Failed to optimize prompt.');
@@ -96,7 +97,7 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
                 prompt,
                 currentAspectRatio,
                 setLoadingMessage,
-                { videoToExtend: sourceVideo.video }
+                { videoToExtend: sourceVideo.video, modelId: MODEL_IDS.VEO_31_PREVIEW }
             );
             setGeneratedVideo({ url: videoUrl, data: videoData });
         } catch (e: any) {
@@ -130,6 +131,9 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
     const isGenerationDisabled = isLoading || isOptimizing || !prompt || !sourceVideo;
     const outputVideo = generatedVideo;
     const currentSourceUrl = outputVideo ? sourceVideoUrl : sourceVideoUrl || '';
+    const activeModelId = generatedVideo?.data.modelId ?? MODEL_IDS.VEO_31_PREVIEW;
+    const activeModelInfo =
+        VIDEO_MODEL_INFO[activeModelId] ?? VIDEO_MODEL_INFO[MODEL_IDS.VEO_31_PREVIEW];
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -201,6 +205,23 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
                         className="w-full bg-white border-gray-300 rounded-lg p-3 text-black border focus:ring-2 focus:ring-black focus:border-black transition duration-200 h-28"
                     />
                 </div>
+                <div>
+                    <label className="block text-lg font-semibold mb-2">3. Select Video Model</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {VIDEO_MODEL_OPTIONS_EXTEND.map(({ id, displayName, usageHint }) => (
+                            <div
+                                key={id}
+                                className="py-3 px-4 rounded-lg text-left text-sm border bg-black text-white border-black"
+                            >
+                                <span className="font-semibold block">{displayName}</span>
+                                <span className="text-xs opacity-80">{usageHint}</span>
+                                <span className="mt-1 block text-xs text-gray-200">
+                                    Video extensions always use this model for stability.
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
                 <button
                     onClick={handleExtendVideo}
                     disabled={isGenerationDisabled}
@@ -219,8 +240,15 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
             </div>
             <div
                 ref={outputRef}
-                className="w-full lg:w-1/2 bg-white border border-gray-300 p-4 lg:p-6 rounded-xl shadow-sm flex flex-col items-center justify-center min-h-[400px]"
+                className="w-full lg:w-1/2 bg-white border border-gray-300 p-4 lg:p-6 rounded-xl shadow-sm flex flex-col items-center justify-center min-h-[400px] gap-4"
             >
+                <div className="self-stretch text-left">
+                    <p className="text-xs font-semibold uppercase text-gray-500 tracking-wide">
+                        Video model
+                    </p>
+                    <p className="text-sm text-gray-700">{activeModelInfo.displayName}</p>
+                    <p className="text-xs text-gray-500">{activeModelInfo.usageHint}</p>
+                </div>
                 {isLoading ? (
                     <LoadingPlaceholder
                         message={loadingMessage}
@@ -267,4 +295,3 @@ const VideoToVideoGenerator: React.FC<VideoToVideoGeneratorProps> = ({ initialVi
 };
 
 export default VideoToVideoGenerator;
-
