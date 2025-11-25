@@ -1,10 +1,5 @@
 import { GoogleGenAI, Modality, type Video, type GenerateVideosConfig } from '@google/genai';
 import { VideoAspectRatio, ImageModel, ImageAspectRatio, GeneratedVideo, VideoModel } from '../types';
-import { MODEL_IDS, IMAGE_MODEL_OPTIONS, PROMPT_MODEL_INFO } from '../constants/modelInfo';
-
-const GEMINI_IMAGE_MODEL_INFO = IMAGE_MODEL_OPTIONS.find(
-    ({ id }) => id === MODEL_IDS.GEMINI_IMAGE_FLASH
-)!;
 
 const getBase64Data = (dataUrl: string): string => {
     return dataUrl.split(',')[1];
@@ -18,7 +13,7 @@ export const generateVideo = async (
     prompt: string,
     aspectRatio: VideoAspectRatio,
     setLoadingMessage: (message: string) => void,
-    options: { imageBase64?: string; videoToExtend?: Video; modelId?: VideoModel }
+    options: { imageBase64?: string; videoToExtend?: Video; model?: VideoModel; }
 ): Promise<{ videoUrl: string; videoData: GeneratedVideo }> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -29,13 +24,12 @@ export const generateVideo = async (
         aspectRatio: aspectRatio,
     };
 
-    const selectedModel: VideoModel =
-        options.modelId ?? (options.videoToExtend ? MODEL_IDS.VEO_31_PREVIEW : MODEL_IDS.VEO_31_FAST_PREVIEW);
+    const model = options.model || 'veo-3.1-fast-generate-preview';
 
     if (options.videoToExtend) {
         setLoadingMessage("Extending your video...");
         operation = await ai.models.generateVideos({
-            model: selectedModel,
+            model: 'veo-3.1-generate-preview',
             prompt: prompt,
             video: options.videoToExtend,
             config: videoConfig
@@ -49,7 +43,7 @@ export const generateVideo = async (
         
         setLoadingMessage("Initiating video generation from image...");
         operation = await ai.models.generateVideos({
-            model: selectedModel,
+            model: model,
             prompt: prompt,
             image: {
                 imageBytes: imageData,
@@ -60,7 +54,7 @@ export const generateVideo = async (
     } else {
         setLoadingMessage("Initiating video generation from text...");
         operation = await ai.models.generateVideos({
-            model: selectedModel,
+            model: model,
             prompt: prompt,
             config: videoConfig
         });
@@ -99,24 +93,19 @@ export const generateVideo = async (
     
     const returnedVideoData: GeneratedVideo = {
         video: generatedVideo.video,
-        config: videoConfig,
-        modelId: selectedModel
+        config: videoConfig
     };
 
     return { videoUrl, videoData: returnedVideoData };
 };
 
-export const optimizePrompt = async (
-    prompt: string,
-    mode: keyof typeof PROMPT_MODEL_INFO = 'image'
-): Promise<string> => {
+export const optimizePrompt = async (prompt: string): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const modelInfo = PROMPT_MODEL_INFO[mode];
     const systemInstruction = `You are an expert in writing prompts for AI image and video generation. Enhance the user's prompt to be more descriptive, vivid, and cinematic. Focus on motion, atmosphere, and lighting. Return ONLY the optimized prompt, without any introductory text or quotation marks.`;
     
     try {
         const response = await ai.models.generateContent({
-            model: modelInfo.modelId,
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
@@ -135,11 +124,10 @@ export const optimizePrompt = async (
 export const optimizeImagePromptForVideo = async (prompt: string): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const systemInstruction = `You are an expert in writing prompts for AI video generation. The user has provided a prompt that was used to generate a static image. Your task is to enhance and transform this prompt to describe a dynamic video scene based on the image. Focus on adding motion, camera movement, and atmospheric effects. Return ONLY the optimized prompt, without any introductory text or quotation marks.`;
-    const modelInfo = PROMPT_MODEL_INFO.video;
     
     try {
         const response = await ai.models.generateContent({
-            model: modelInfo.modelId,
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
@@ -160,80 +148,90 @@ export const generateImage = async (
     prompt: string,
     model: ImageModel,
     aspectRatio: ImageAspectRatio,
-    referenceImageBase64?: string | null
+    referenceImage: string | null
 ): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    if (referenceImageBase64 && model !== MODEL_IDS.GEMINI_IMAGE_FLASH) {
-        throw new Error(`Reference images are only supported with the ${GEMINI_IMAGE_MODEL_INFO.displayName} model.`);
-    }
-
-    if (model === MODEL_IDS.IMAGEN_4) {
+    if (model === 'imagen-4.0-generate-001') {
         const response = await ai.models.generateImages({
-            model: MODEL_IDS.IMAGEN_4,
+            model: 'imagen-4.0-generate-001',
             prompt: prompt,
             config: {
                 numberOfImages: 1,
-                outputMimeType: 'image/png',
+                outputMimeType: 'image/jpeg',
                 aspectRatio: aspectRatio,
             },
         });
-        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-        return `data:image/png;base64,${base64ImageBytes}`;
-    } else { // Gemini Image Flash
-        // FIX: Corrected the type for 'parts' to be an array of a union of text and inlineData parts.
-        const parts: ({ text: string; } | { inlineData: { data: string; mimeType: string; }; })[] = [{ text: prompt }];
 
-        if (referenceImageBase64) {
-            const mimeType = getMimeType(referenceImageBase64);
+        if (!response.generatedImages || response.generatedImages.length === 0) {
+            throw new Error('Image generation failed to produce an image.');
+        }
+
+        const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+        return `data:image/jpeg;base64,${base64ImageBytes}`;
+
+    } else { // 'gemini-2.5-flash-image' or 'gemini-3-pro-image-preview'
+        const parts: any[] = [{ text: prompt }];
+
+        if (referenceImage) {
+            const mimeType = getMimeType(referenceImage);
+            const data = getBase64Data(referenceImage);
             if (!mimeType) {
                 throw new Error('Could not determine mime type from reference image data.');
             }
-            const imageData = getBase64Data(referenceImageBase64);
-            
-            // Add image part first for multimodal requests
             parts.unshift({
                 inlineData: {
-                    data: imageData,
+                    data: data,
                     mimeType: mimeType,
                 },
             });
         }
         
         const response = await ai.models.generateContent({
-            model: MODEL_IDS.GEMINI_IMAGE_FLASH,
+            model: model,
             contents: {
                 parts: parts,
             },
             config: {
                 responseModalities: [Modality.IMAGE],
+                imageConfig: {
+                    aspectRatio: aspectRatio
+                }
             },
         });
-        
+
         for (const part of response.candidates[0].content.parts) {
             if (part.inlineData) {
-                const base64ImageBytes = part.inlineData.data;
-                return `data:image/png;base64,${base64ImageBytes}`;
+                const base64ImageBytes: string = part.inlineData.data;
+                const mimeType = part.inlineData.mimeType;
+                return `data:${mimeType};base64,${base64ImageBytes}`;
             }
         }
-        throw new Error(`Image generation with ${GEMINI_IMAGE_MODEL_INFO.displayName} failed to return an image.`);
+
+        throw new Error('Image generation failed with Nano Banana model.');
     }
 };
 
 export const editImage = async (
     prompt: string,
-    imageBase64: string
+    sourceImageBase64: string,
+    model: ImageModel,
+    aspectRatio: ImageAspectRatio
 ): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const mimeType = getMimeType(imageBase64);
+    
+    const mimeType = getMimeType(sourceImageBase64);
     if (!mimeType) {
         throw new Error('Could not determine mime type from image data.');
     }
-    const imageData = getBase64Data(imageBase64);
-    
+    const imageData = getBase64Data(sourceImageBase64);
+
+    if (model === 'imagen-4.0-generate-001') {
+         throw new Error('Imagen model does not support image editing with this method.');
+    }
+
     const response = await ai.models.generateContent({
-        model: MODEL_IDS.GEMINI_IMAGE_FLASH,
+        model: model,
         contents: {
             parts: [
                 {
@@ -242,19 +240,26 @@ export const editImage = async (
                         mimeType: mimeType,
                     },
                 },
-                { text: prompt },
+                {
+                    text: prompt,
+                },
             ],
         },
         config: {
             responseModalities: [Modality.IMAGE],
+            imageConfig: {
+                aspectRatio: aspectRatio
+            }
         },
     });
 
     for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-            const base64ImageBytes = part.inlineData.data;
-            return `data:${part.inlineData.mimeType};base64,${base64ImageBytes}`;
+            const base64ImageBytes: string = part.inlineData.data;
+            const responseMimeType = part.inlineData.mimeType;
+            return `data:${responseMimeType};base64,${base64ImageBytes}`;
         }
     }
-    throw new Error("Image editing failed to return an image.");
+
+    throw new Error('Image editing failed.');
 };
